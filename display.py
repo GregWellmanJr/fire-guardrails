@@ -486,10 +486,7 @@ def render_guidance_results(snap: dict):
     annual_cashflow_total = snap.get("annual_cashflow_total")
 
     st.subheader("Guidance Mode")
-    st.markdown(
-        "Use this mode to generate forward-looking guidance for a client who is retired today and in drawdown.\n\n"
-        "All dollar amounts shown are in real (constant) dollars, net of inflation.\n\n"
-        "Adapted from [rogercost/fire-guardrails](https://github.com/rogercost/fire-guardrails). For more details, see the [documentation](https://github.com/rogercost/fire-guardrails/blob/main/README.md).")
+    st.markdown("All dollar amounts shown are in real (constant) dollars, net of inflation.")
 
     # Notes for spending row shows spending rate
     spending_notes = (

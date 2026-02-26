@@ -4,6 +4,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import controls
 import display
@@ -27,14 +28,18 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]:hove
 </style>
 """, unsafe_allow_html=True)
 
+st.title("Spending Capacity")
+
 # Apply configuration from hyperlink when available (only once per session)
 if "_settings_initialized" not in st.session_state:
     controls.hydrate_settings()
 
 # Mode toggle (top, persistent)
+if st.session_state.pop("_reset_app_mode", False):
+    st.session_state["app_mode"] = "Guidance Mode"
 mode = st.radio(
     "Mode",
-    ["Simulation Mode", "Guidance Mode"],
+    ["Guidance Mode", "Simulation Mode"],
     index=0,
     horizontal=True,
     key="app_mode",
@@ -66,7 +71,42 @@ def _unmark_initial_spending_overridden() -> None:
     st.session_state["_initial_spending_overridden"] = False
 
 # Sidebar for inputs
-st.sidebar.header("Simulation Parameters")
+_sidebar_header_col, _sidebar_reset_col = st.sidebar.columns([3, 1])
+_sidebar_header_col.markdown("### Simulation Parameters")
+if _sidebar_reset_col.button("Reset", help="Reset all inputs to their default values"):
+    st.query_params.clear()
+    # Explicitly set widget keys to defaults — more reliable than deleting,
+    # because Streamlit can repopulate deleted keys from the browser's cached values.
+    st.session_state["_reset_app_mode"] = True  # applied before radio renders on next run
+    st.session_state["retirement_start_date"] = datetime.date(1968, 4, 1)
+    st.session_state["retirement_duration_months"] = 360
+    st.session_state["analysis_start_date"] = datetime.date(1871, 1, 1)
+    st.session_state["initial_portfolio_value"] = 1_000_000.0
+    st.session_state["stock_pct"] = 0.75
+    st.session_state["target_success_rate"] = 0.90
+    st.session_state["_initial_spending_overridden"] = False
+    st.session_state["upper_guardrail_success"] = 1.00
+    st.session_state["lower_guardrail_success"] = 0.75
+    st.session_state["upper_adjustment_fraction"] = 1.0
+    st.session_state["lower_adjustment_fraction"] = 0.1
+    st.session_state["adjustment_threshold"] = 0.0
+    st.session_state["adjustment_frequency"] = "Monthly"
+    st.session_state["spending_cap_option"] = "Unlimited"
+    st.session_state["spending_floor_option"] = "Unlimited"
+    st.session_state["final_value_target"] = 0.0
+    st.session_state["cashflows"] = []
+    st.session_state["conditional_cashflows"] = []
+    # Clear computed/results state
+    for key in [
+        "results_df", "last_run_signature", "dirty", "isr_params", "isr_value",
+        "guardrail_params", "upper_label_suffix", "lower_label_suffix",
+        "initial_spending_label_text", "initial_spending_label_color",
+        "_settings_initialized", "_settings_error", "_settings_loaded_from_query",
+        "_simulation_retirement_start_date", "_initial_spending_auto_value",
+        "settings", "_encoded_settings", "_previous_mode", "shiller_df",
+    ]:
+        st.session_state.pop(key, None)
+    st.rerun()
 
 settings_error = st.session_state.get("_settings_error")
 if settings_error:
@@ -573,10 +613,98 @@ elif not is_guidance:
     else:
         st.subheader("Simulation Mode")
         st.markdown("Use this mode to simulate running a guardrail-based retirement withdrawal strategy during a historical period.\n\n"
-                    "All dollar amounts shown are in real (constant) dollars, net of inflation.\n\n"
-                    "Adapted from [rogercost/fire-guardrails](https://github.com/rogercost/fire-guardrails). For more details, see the [documentation](https://github.com/rogercost/fire-guardrails/blob/main/README.md).")
+                    "All dollar amounts shown are in real (constant) dollars, net of inflation.")
         st.info("Adjust parameters in the sidebar and click 'Run Simulation' to start.")
 
 st.divider()
-st.markdown(f"[Shareable link to this run]({share_link_url})")
-st.caption("Copy the link to load these settings on any device.")
+_btn_html = f"""
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-size: 0.875rem; color: #31333f; }}
+  .row {{ display: flex; align-items: center; gap: 8px; }}
+  .btn {{
+    white-space: nowrap;
+    padding: 5px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(49,51,63,0.2);
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-family: inherit;
+    color: inherit;
+    line-height: 1.5;
+  }}
+  .btn:hover {{ border-color: rgba(49,51,63,0.5); background: rgba(151,166,195,0.08); }}
+</style>
+<div class="row">
+  <button class="btn" id="share-btn" onclick="copyShareLink()">Copy shareable link</button>
+  <button class="btn" id="config-btn" onclick="copyConfigString()">Copy config string</button>
+</div>
+<script>
+  var link1 = document.createElement('link');
+  link1.rel = 'preconnect';
+  link1.href = 'https://fonts.googleapis.com';
+  document.head.appendChild(link1);
+  var link2 = document.createElement('link');
+  link2.rel = 'stylesheet';
+  link2.href = 'https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap';
+  document.head.appendChild(link2);
+  var fontStyle = document.createElement('style');
+  fontStyle.textContent = '* {{ font-family: "Source Sans 3", sans-serif !important; }}';
+  document.head.appendChild(fontStyle);
+
+  var CONFIG = '{encoded_config}';
+
+  function copyText(text, btn, label) {{
+    var el = document.createElement('textarea');
+    el.value = text;
+    el.style.cssText = 'position:fixed;top:-9999px;';
+    document.body.appendChild(el);
+    el.focus(); el.select();
+    try {{
+      document.execCommand('copy');
+      btn.textContent = '✓ Copied!';
+    }} catch(e) {{
+      btn.textContent = 'Failed';
+    }}
+    document.body.removeChild(el);
+    setTimeout(function() {{ btn.textContent = label; }}, 2000);
+  }}
+
+  function copyShareLink() {{
+    var base = window.parent.location.origin + window.parent.location.pathname;
+    copyText(base + '?config=' + CONFIG, document.getElementById('share-btn'), 'Copy shareable link');
+  }}
+
+  function copyConfigString() {{
+    copyText(CONFIG, document.getElementById('config-btn'), 'Copy config string');
+  }}
+</script>
+"""
+components.html(_btn_html, height=40)
+
+paste_input_col, load_btn_col, _ = st.columns([4, 1, 5])
+with paste_input_col:
+    if st.session_state.pop("_clear_paste_config", False):
+        st.session_state["paste_config_input"] = ""
+    pasted_config = st.text_input(
+        "Paste config string",
+        placeholder="Paste config string here to load settings",
+        label_visibility="collapsed",
+        key="paste_config_input",
+    )
+with load_btn_col:
+    if st.button("Load", key="load_config_btn"):
+        val = (pasted_config or "").strip()
+        if val:
+            try:
+                Settings.from_base64(val)
+                st.query_params["config"] = val
+                if "_settings_initialized" in st.session_state:
+                    del st.session_state["_settings_initialized"]
+                st.session_state["_clear_paste_config"] = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Invalid config string: {e}")
+
+st.caption("Adapted from [rogercost/fire-guardrails](https://github.com/rogercost/fire-guardrails). For more details, see the [documentation](https://github.com/rogercost/fire-guardrails/blob/main/README.md).")
