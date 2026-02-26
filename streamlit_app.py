@@ -558,7 +558,7 @@ elif not is_guidance:
         st.subheader("Simulation Mode")
         st.markdown("Use this mode to simulate running a guardrail-based retirement withdrawal strategy during a historical period.\n\n"
                     "All dollar amounts shown are in real (constant) dollars, net of inflation. For more details, see the [documentation](https://github.com/rogercost/fire-guardrails/blob/main/README.md).\n\n"
-                    "Adapted from [rogercost/fire-guardrails](https://github.com/rogercost/fire-guardrails)."
+                    "Adapted from [rogercost/fire-guardrails](https://github.com/rogercost/fire-guardrails).")
         st.info("Adjust parameters in the sidebar and click 'Run Simulation' to start.")
 
 st.divider()
