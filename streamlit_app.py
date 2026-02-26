@@ -70,6 +70,20 @@ def _unmark_initial_spending_overridden() -> None:
     """Flag that the current spending widget is no longer being manually overridden."""
     st.session_state["_initial_spending_overridden"] = False
 
+def _try_load_pasted_config() -> None:
+    """Validate and load a pasted config string from session state."""
+    val = (st.session_state.get("paste_config_input") or "").strip()
+    if not val:
+        return
+    try:
+        Settings.from_base64(val)
+        st.query_params["config"] = val
+        st.session_state.pop("_settings_initialized", None)
+        st.session_state["_clear_paste_config"] = True
+        st.session_state.pop("_paste_config_error", None)
+    except Exception as e:
+        st.session_state["_paste_config_error"] = str(e)
+
 # Sidebar for inputs
 _sidebar_header_col, _sidebar_reset_col = st.sidebar.columns([3, 1])
 _sidebar_header_col.markdown("### Simulation Parameters")
@@ -82,14 +96,14 @@ if _sidebar_reset_col.button("Reset", help="Reset all inputs to their default va
     st.session_state["retirement_duration_months"] = 360
     st.session_state["analysis_start_date"] = datetime.date(1871, 1, 1)
     st.session_state["initial_portfolio_value"] = 1_000_000.0
-    st.session_state["stock_pct"] = 0.75
-    st.session_state["target_success_rate"] = 0.90
+    st.session_state["stock_pct"] = 75
+    st.session_state["target_success_rate"] = 90
     st.session_state["_initial_spending_overridden"] = False
-    st.session_state["upper_guardrail_success"] = 1.00
-    st.session_state["lower_guardrail_success"] = 0.75
-    st.session_state["upper_adjustment_fraction"] = 1.0
-    st.session_state["lower_adjustment_fraction"] = 0.1
-    st.session_state["adjustment_threshold"] = 0.0
+    st.session_state["upper_guardrail_success"] = 100
+    st.session_state["lower_guardrail_success"] = 75
+    st.session_state["upper_adjustment_fraction"] = 100
+    st.session_state["lower_adjustment_fraction"] = 10
+    st.session_state["adjustment_threshold"] = 0
     st.session_state["adjustment_frequency"] = "Monthly"
     st.session_state["spending_cap_option"] = "Unlimited"
     st.session_state["spending_floor_option"] = "Unlimited"
@@ -176,13 +190,14 @@ initial_value = st.sidebar.number_input(
 
 stock_pct = st.sidebar.slider(
     "Stock Percentage",
-    value=controls.get_float_state("stock_pct", 0.75),
-    min_value=0.0,
-    max_value=1.0,
-    step=0.01,
+    value=int(round(controls.get_float_state("stock_pct", 75))),
+    min_value=0,
+    max_value=100,
+    step=1,
+    format="%d%%",
     on_change=_unmark_initial_spending_overridden,
     key="stock_pct",
-    help="Fraction of the portfolio allocated to US stocks; remainder to 10Y treasuries."
+    help="Percentage of the portfolio allocated to US stocks; remainder to 10Y treasuries."
 )
 
 cap_options = ["Unlimited"] + [f"{pct}%" for pct in range(100, 201, 5)]
@@ -201,9 +216,9 @@ isr_params = {
     'duration_months': int(retirement_duration_months),
     'analysis_start_date': pd.to_datetime(analysis_start_date),
     'initial_value': float(initial_value),
-    'stock_pct': float(stock_pct),
-    # Use current target_success_rate if available, otherwise default of 0.90
-    'desired_success_rate': float(st.session_state.get('target_success_rate', 0.90)),
+    'stock_pct': float(stock_pct) / 100,
+    # Use current target_success_rate if available, otherwise default of 90 (%)
+    'desired_success_rate': float(st.session_state.get('target_success_rate', 90)) / 100,
     'final_value_target': float(st.session_state.get('final_value_target', 0.0)),
     'cashflows': controls.cashflows_to_tuple(sanitized_cashflows),
 }
@@ -228,15 +243,16 @@ except Exception as e:
 target_success_label = f"Target Success Rate{isr_label_suffix}"
 target_success_rate = st.sidebar.slider(
     target_success_label,
-    value=st.session_state.get("target_success_rate", 0.90),
-    min_value=0.0,
-    max_value=1.0,
-    step=0.01,
+    value=int(round(st.session_state.get("target_success_rate", 90))),
+    min_value=0,
+    max_value=100,
+    step=1,
+    format="%d%%",
     help="Desired probability of success that will be used to select an initial spending rate.\n\nThe initial "
          "spending rate will be the rate at which fixed spending over all periods of time with length = the "
          "configured retirement period length, between the Historical Analysis Start Date and the Retirement Start "
-         "Date, end with >0 values this percent of the time.\n\nSetting this higher, e.g. 0.80-0.99, is more conservative: "
-         "lower initial spending, lower chance of adjustment; setting this lower is more aggressive, 0.75-0.60 provides higher "
+         "Date, end with >0 values this percent of the time.\n\nSetting this higher, e.g. 80-99%, is more conservative: "
+         "lower initial spending, lower chance of adjustment; setting this lower is more aggressive, 60-75% provides higher "
          "initial spending, higher chance of adjustment.",
     key="target_success_rate",
     on_change=_unmark_initial_spending_overridden,
@@ -297,9 +313,9 @@ try:
         'duration_months': int(retirement_duration_months),
         'analysis_start_date': pd.to_datetime(analysis_start_date),
         'initial_value': float(initial_value),
-        'stock_pct': float(stock_pct),
-        'upper_sr': float(st.session_state.get("upper_guardrail_success", 1.00)),
-        'lower_sr': float(st.session_state.get("lower_guardrail_success", 0.75)),
+        'stock_pct': float(stock_pct) / 100,
+        'upper_sr': float(st.session_state.get("upper_guardrail_success", 100)) / 100,
+        'lower_sr': float(st.session_state.get("lower_guardrail_success", 75)) / 100,
         'isr': float(st.session_state.get('isr_value')) if st.session_state.get('isr_value') is not None else None,
         'initial_spending': float(st.session_state.get("initial_monthly_spending", 0.0)),
         'final_value_target': float(st.session_state.get('final_value_target', 0.0)),
@@ -329,10 +345,11 @@ _render_sidebar_label(upper_guardrail_label, upper_label_color)
 
 upper_guardrail_success = st.sidebar.slider(
     upper_guardrail_label,
-    value=st.session_state.get("upper_guardrail_success", 1.00),
-    min_value=0.0,
-    max_value=1.0,
-    step=0.01,
+    value=int(round(st.session_state.get("upper_guardrail_success", 100))),
+    min_value=0,
+    max_value=100,
+    step=1,
+    format="%d%%",
     help="The spending rate used to calculate the upper guardrail portfolio value.\n\nThis is the value where the "
          "current spending amount, if held constant, will succeed this frequently or more, for all periods with "
          "length = # months remaining in retirement, between the Historical Analysis Start Date and the current "
@@ -346,10 +363,11 @@ _render_sidebar_label(lower_guardrail_label, lower_label_color)
 
 lower_guardrail_success = st.sidebar.slider(
     lower_guardrail_label,
-    value=st.session_state.get("lower_guardrail_success", 0.75),
-    min_value=0.0,
-    max_value=1.0,
-    step=0.01,
+    value=int(round(st.session_state.get("lower_guardrail_success", 75))),
+    min_value=0,
+    max_value=100,
+    step=1,
+    format="%d%%",
     help="The spending rate used to calculate the lower guardrail portfolio value.\n\nThis is the value where the "
          "current spending amount, if held constant, will succeed this frequently or less, for all periods with "
          "length = # months remaining in retirement, between the Historical Analysis Start Date and the current "
@@ -361,10 +379,11 @@ lower_guardrail_success = st.sidebar.slider(
 
 upper_adjustment_fraction = st.sidebar.slider(
     "Upper Adjustment Fraction",
-    value=controls.get_float_state("upper_adjustment_fraction", 1.0),
-    min_value=0.0,
-    max_value=1.0,
-    step=0.05,
+    value=int(round(controls.get_float_state("upper_adjustment_fraction", 100))),
+    min_value=0,
+    max_value=100,
+    step=5,
+    format="%d%%",
     key="upper_adjustment_fraction",
     help="How much to increase spending when we hit the upper guardrail.\n\nExpressed as a % of the distance between "
          "the Upper Guardrail Success Rate and the Target Success Rate.\n\nFor example, if the upper guardrail "
@@ -375,10 +394,11 @@ upper_adjustment_fraction = st.sidebar.slider(
 
 lower_adjustment_fraction = st.sidebar.slider(
     "Lower Adjustment Fraction",
-    value=controls.get_float_state("lower_adjustment_fraction", 0.1),
-    min_value=0.0,
-    max_value=1.0,
-    step=0.05,
+    value=int(round(controls.get_float_state("lower_adjustment_fraction", 10))),
+    min_value=0,
+    max_value=100,
+    step=5,
+    format="%d%%",
     key="lower_adjustment_fraction",
     help="How much to decrease spending when we hit the lower guardrail.\n\nExpressed as a % of the distance between "
          "the Lower Guardrail Success Rate and the Target Success Rate.\n\nFor example, if the lower guardrail "
@@ -387,13 +407,14 @@ lower_adjustment_fraction = st.sidebar.slider(
          "is more conservative, and will cause you to make larger spending decreases when you hit the lower guardrail."
 )
 
-default_threshold = 0.0 if is_guidance else 0.05
+default_threshold = 0 if is_guidance else 5
 adjustment_threshold = st.sidebar.slider(
-    "Adjustment Threshold (e.g., 0.05 for 5%)",
-    value=controls.get_float_state("adjustment_threshold", default_threshold),
-    min_value=0.0,
-    max_value=0.2,
-    step=0.01,
+    "Adjustment Threshold",
+    value=int(round(controls.get_float_state("adjustment_threshold", default_threshold))),
+    min_value=0,
+    max_value=20,
+    step=1,
+    format="%d%%",
     key="adjustment_threshold",
     help="The minimum percent difference between our new spending and our prior spending, before we make a change.\n\n"
          "Even if we hit a guardrail, we may elect to set this to 5% to avoid making lots of small adjustments. Set it "
@@ -491,15 +512,15 @@ settings = Settings(
     retirement_duration_months=int(retirement_duration_months),
     analysis_start_date=analysis_start_date,
     initial_value=float(initial_value),
-    stock_pct=float(stock_pct),
-    target_success_rate=float(target_success_rate),
+    stock_pct=float(stock_pct) / 100,
+    target_success_rate=float(target_success_rate) / 100,
     initial_monthly_spending=float(initial_monthly_spending),
     initial_spending_overridden=bool(st.session_state.get("_initial_spending_overridden", False)),
-    upper_guardrail_success=float(upper_guardrail_success),
-    lower_guardrail_success=float(lower_guardrail_success),
-    upper_adjustment_fraction=float(upper_adjustment_fraction),
-    lower_adjustment_fraction=float(lower_adjustment_fraction),
-    adjustment_threshold=float(adjustment_threshold),
+    upper_guardrail_success=float(upper_guardrail_success) / 100,
+    lower_guardrail_success=float(lower_guardrail_success) / 100,
+    upper_adjustment_fraction=float(upper_adjustment_fraction) / 100,
+    lower_adjustment_fraction=float(lower_adjustment_fraction) / 100,
+    adjustment_threshold=float(adjustment_threshold) / 100,
     adjustment_frequency=adjustment_frequency,
     spending_cap_option=st.session_state.get("spending_cap_option", "Unlimited"),
     spending_floor_option=st.session_state.get("spending_floor_option", "Unlimited"),
@@ -687,24 +708,17 @@ paste_input_col, load_btn_col, _ = st.columns([4, 1, 5])
 with paste_input_col:
     if st.session_state.pop("_clear_paste_config", False):
         st.session_state["paste_config_input"] = ""
-    pasted_config = st.text_input(
+    st.text_input(
         "Paste config string",
         placeholder="Paste config string here to load settings",
         label_visibility="collapsed",
         key="paste_config_input",
+        on_change=_try_load_pasted_config,
     )
+    if "_paste_config_error" in st.session_state:
+        st.error(f"Invalid config string: {st.session_state.pop('_paste_config_error')}")
 with load_btn_col:
     if st.button("Load", key="load_config_btn"):
-        val = (pasted_config or "").strip()
-        if val:
-            try:
-                Settings.from_base64(val)
-                st.query_params["config"] = val
-                if "_settings_initialized" in st.session_state:
-                    del st.session_state["_settings_initialized"]
-                st.session_state["_clear_paste_config"] = True
-                st.rerun()
-            except Exception as e:
-                st.error(f"Invalid config string: {e}")
+        _try_load_pasted_config()
 
 st.caption("Adapted from [rogercost/fire-guardrails](https://github.com/rogercost/fire-guardrails). For more details, see the [documentation](https://github.com/rogercost/fire-guardrails/blob/main/README.md).")
