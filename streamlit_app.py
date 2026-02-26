@@ -12,6 +12,21 @@ from app_settings import CashflowSetting, ConditionalCashflowSetting, Settings
 
 st.set_page_config(layout="wide", page_title="Guardrail Withdrawal Simulator")
 
+st.markdown("""
+<style>
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {
+    background-color: #2d8a4e !important;
+    border-color: #2d8a4e !important;
+    color: white !important;
+}
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]:hover {
+    background-color: #236e3e !important;
+    border-color: #236e3e !important;
+    color: white !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Apply configuration from hyperlink when available (only once per session)
 if "_settings_initialized" not in st.session_state:
     controls.hydrate_settings()
@@ -502,6 +517,7 @@ if is_guidance:
 
 elif st.sidebar.button(
     "Run Simulation",
+    type="primary",
     help="Fetch data and run the guardrail withdrawal simulation with the selected parameters."
 ):
     status_ph = st.empty()
